@@ -1,0 +1,192 @@
+version: '3'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - broker
+  broker:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: broker
+    ports:
+      - '9092:9092'
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: nc -z localhost 9092 || exit -1d
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - broker
+  cart-db:
+    image: mysql:8.0.31
+    restart: always
+    environment:
+      MYSQL_HOST: 'cart-db'
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: cart
+      MYSQL_USER: cart.local
+      MYSQL_PASSWORD: 9g4EhiEN19vKSvPYb1wkU6k2isq76f4O
+      MYSQL_ROOT_PASSWORD: GCJfQZQDGj0nMdG2R758LaF3ZT43ttwr
+    ports:
+      - '3306:3306'
+    expose:
+      - '3306'
+    volumes:
+      - cart-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - cart
+  order-db:
+    image: mysql:8.0.31
+    restart: always
+    environment:
+      MYSQL_HOST: 'order-db'
+      MYSQL_PORT: 3307
+      MYSQL_DATABASE: order
+      MYSQL_USER: order.local
+      MYSQL_PASSWORD: bwPu4Gn4GwuKaL3fQ0jiatrf40dyZzAc
+      MYSQL_ROOT_PASSWORD: aFQ9yliSX5ru4fiCCBiL6oyeMlIzm7Yg
+    ports:
+      - '3307:3306'
+    expose:
+      - '3307'
+    volumes:
+      - order-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - order
+  product-db:
+    image: mysql:8.0.31
+    restart: always
+    environment:
+      MYSQL_HOST: 'product-db'
+      MYSQL_PORT: 3308
+      MYSQL_DATABASE: product
+      MYSQL_USER: product.local
+      MYSQL_PASSWORD: VdD2555vsEDzvmHFbRMge8SY10UrY1TA
+      MYSQL_ROOT_PASSWORD: 1s1c8CSqwy0oqtPTSO0gYE68ywMMR563
+    ports:
+      - '3308:3306'
+    expose:
+      - '3308'
+    volumes:
+      - product-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - product
+  cart:
+    build:
+      context: .
+      dockerfile: ./Docker/go.Dockerfile
+      args:
+        serviceName: cart
+    ports:
+      - 3000:3000
+    depends_on:
+      broker:
+        condition: service_healthy
+      cart-db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      KAFKA_BROKER_HOST: 'broker:9092'
+      MYSQL_HOST: 'cart-db'
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: cart
+      MYSQL_USER: cart.local
+      MYSQL_PASSWORD: 9g4EhiEN19vKSvPYb1wkU6k2isq76f4O
+      ORDER_HOST: 'http://order:3001'
+    restart: on-failure
+    networks:
+      - cart
+      - broker
+      - vpc
+  order:
+    build:
+      context: .
+      dockerfile: ./Docker/go.Dockerfile
+      args:
+        serviceName: order
+    ports:
+      - 3001:3001
+    depends_on:
+      broker:
+        condition: service_healthy
+      order-db:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      SERVICE_NAME: order_service
+      KAFKA_BROKER_HOST: 'broker:9092'
+      MYSQL_HOST: 'order-db'
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: order
+      MYSQL_USER: order.local
+      MYSQL_PASSWORD: bwPu4Gn4GwuKaL3fQ0jiatrf40dyZzAc
+      CART_HOST: 'http://cart:3000'
+      PRODUCT_HOST: 'http://product:3002'
+    restart: on-failure
+    networks:
+      - order
+      - broker
+      - vpc
+  product:
+    build:
+      context: .
+      dockerfile: ./Docker/go.Dockerfile
+      args:
+        serviceName: product
+    ports:
+      - 3002:3002
+    depends_on:
+      product-db:
+        condition: service_healthy
+    environment:
+      PORT: 3002
+      SERVICE_NAME: product_service
+      MYSQL_HOST: 'product-db'
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: product
+      MYSQL_USER: product.local
+      MYSQL_PASSWORD: VdD2555vsEDzvmHFbRMge8SY10UrY1TA
+    restart: on-failure
+    networks:
+      - product
+      - vpc
+
+volumes:
+  cart-db:
+  order-db:
+  product-db:
+
+networks:
+  cart:
+  order:
+  product:
+  broker:
+  vpc:
